@@ -1,0 +1,1582 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backtrack</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c3aed'/%3E%3Cg stroke='%23fff' stroke-width='2.4' fill='none' stroke-linecap='round'%3E%3Ccircle cx='11' cy='8.5' r='2.6'/%3E%3Ccircle cx='11' cy='23.5' r='2.6'/%3E%3Ccircle cx='21.5' cy='11' r='2.6'/%3E%3Cpath d='M11 11.1v9.8M21.5 13.6c0 4.6-10.5 2.6-10.5 7.3'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+  /* Theme from the project banner: dark navy, card panels, purple for forks. */
+  :root {
+    color-scheme: dark;
+    --bg: #0b0d1a; --panel: #1a1b2e; --panel-2: #14152a; --line: #2a2b40; --line-strong: #3a3b58;
+    --text: #e5e7eb; --title: #ffffff; --muted: #9ca3af;
+    --accent: #7c3aed; --accent-text: #b794f6; --fork-bg: #1e0f3d; --fork-line: #7c3aed;
+    --ok: #2dd4bf; --ok-bg: #0d2b2a; --fail: #f87171; --fail-bg: #2d1219;
+    --add-bg: #0e2726; --add: #5eead4; --del-bg: #2d1219; --del: #fca5a5; --hunk: #b794f6;
+    --code-bg: #11122a; --sel: #221a44;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+  a { color: var(--accent-text); }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 20px; flex-wrap: wrap;
+           border-bottom: 1px solid var(--line); background: var(--panel-2); }
+  header .brand { display: flex; align-items: center; gap: 10px; color: var(--title); text-decoration: none; }
+  header h1 { font-size: 17px; margin: 0; font-weight: 800; letter-spacing: -.01em; }
+  header .tagline { color: var(--muted); font-size: 13px; }
+  header .root { color: var(--muted); font-size: 12px; margin-left: auto; }
+  header nav { display: flex; gap: 2px; }
+  header nav a { color: var(--muted); text-decoration: none; padding: 4px 10px; border-radius: 8px; font-weight: 600; font-size: 13px; }
+  header nav a:hover { color: var(--title); }
+  header nav a.active { color: var(--title); background: var(--sel); }
+  header a.tag { text-decoration: none; }
+  [hidden] { display: none !important; }
+  .layout { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 53px); }
+  aside { border-right: 1px solid var(--line); overflow-y: auto; background: var(--panel-2); }
+  main { overflow-y: auto; padding: 22px 28px 60px; }
+  .session { padding: 10px 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .session:hover { background: var(--panel); }
+  .session.selected { background: var(--sel); box-shadow: inset 3px 0 var(--accent); }
+  .session.fork { padding-left: 26px; }
+  .session .fork-of { color: var(--accent-text); font-size: 12px; }
+  .session .prompt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+                     overflow: hidden; }
+  .meta { color: var(--muted); font-size: 12px; }
+  .empty { color: var(--muted); padding: 40px; text-align: center; }
+  h2 { color: var(--title); font-size: 20px; margin: 0 0 4px; font-weight: 800; }
+  h3 { color: var(--title); font-size: 14px; margin: 26px 0 10px; font-weight: 700; }
+  .summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 4px 0 18px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+  .turn { margin-bottom: 14px; overflow: hidden; }
+  .turn-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 9px 14px;
+               border-bottom: 1px solid var(--line); }
+  .turn-head .label { white-space: nowrap; font-weight: 700; font-size: 12px; letter-spacing: .06em;
+                      text-transform: uppercase; color: var(--title); }
+  .turn-head .meta { margin-left: auto; }
+  .prompt-text { padding: 10px 14px; white-space: pre-wrap; word-break: break-word; color: var(--title);
+                 border-bottom: 1px solid var(--line); max-height: 9em; overflow: hidden; }
+  .prompt-text.open { max-height: none; }
+  .prompt-text::before { content: "›"; color: var(--accent-text); font-weight: 700; margin-right: 6px; }
+  .more { padding: 0 14px 6px; font-size: 12px; }
+  .step { border-bottom: 1px solid var(--line); }
+  .step:last-child { border-bottom: 0; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 7px 14px; cursor: pointer; min-width: 0; }
+  .row:hover { background: var(--panel-2); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--muted); }
+  .dot.ok { background: var(--ok); } .dot.failed, .dot.interrupted, .dot.blocked { background: var(--fail); }
+  .dot.pending { background: transparent; border: 2px solid var(--muted); }
+  .tool { font-weight: 600; flex: none; color: var(--title); }
+  .desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); flex: 1; min-width: 0; }
+  .tag { font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line-strong);
+         color: var(--muted); flex: none; white-space: nowrap; text-decoration: none; }
+  .tag.fail { color: var(--fail); border-color: currentColor; }
+  .tag.pnr { color: var(--fail); background: var(--fail-bg); border-color: transparent; font-weight: 600; }
+  .tag.fork { color: var(--accent-text); background: var(--fork-bg); border-color: var(--fork-line); }
+  button.link { background: none; border: 0; color: var(--accent-text); cursor: pointer; padding: 0; font: inherit; font-size: 12px; }
+  button.primary { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 6px 14px;
+                   font: inherit; font-weight: 600; cursor: pointer; }
+  button.primary:disabled { opacity: .6; cursor: progress; }
+  .step.pnr { box-shadow: inset 3px 0 var(--fail); }
+  .detail { padding: 0 14px 10px 33px; }
+  .detail h4 { margin: 8px 0 4px; font-size: 11px; text-transform: uppercase; color: var(--muted); letter-spacing: .06em; }
+  pre.block { margin: 0; background: var(--code-bg); padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
+              white-space: pre-wrap; word-break: break-word; max-height: 360px; overflow: auto; }
+  .diff { margin: 6px 14px 10px 33px; border: 1px solid var(--line); border-radius: 8px; overflow: auto;
+          max-height: 520px; background: var(--code-bg); }
+  .diff div { white-space: pre; padding: 0 10px; }
+  .diff .add { background: var(--add-bg); color: var(--add); }
+  .diff .del { background: var(--del-bg); color: var(--del); }
+  .diff .hunk { color: var(--hunk); }
+  .diff .file { font-weight: 700; color: var(--title); background: var(--panel); padding-top: 4px; padding-bottom: 4px; }
+  .diff .none { color: var(--muted); padding: 8px 10px; }
+  .final { padding: 10px 14px; white-space: pre-wrap; word-break: break-word; background: var(--panel-2); }
+  .final .meta { display: block; margin-bottom: 2px; }
+  .sysline { padding: 6px 14px; font-size: 12px; color: var(--muted); }
+
+  /* ---- compare ---- */
+  .branch { display: grid; grid-template-columns: minmax(150px, 210px) 1fr; align-items: center; }
+  .shared { position: relative; padding: 14px; margin-right: 30px; }
+  .shared::after { content: ""; position: absolute; left: 100%; top: 50%; width: 30px; border-top: 2px solid var(--line-strong); }
+  .lanes { position: relative; display: grid; grid-auto-rows: 1fr; gap: 12px; padding-left: 30px; }
+  .lanes::before { content: ""; position: absolute; left: 0; top: 25%; bottom: 25%; border-left: 2px solid var(--line-strong); }
+  .lane { position: relative; padding: 12px 14px; min-width: 0; }
+  .lane::before { content: ""; position: absolute; right: 100%; top: 50%; width: 31px; border-top: 2px solid var(--line-strong); }
+  .lane.fork { background: var(--fork-bg); border-color: var(--fork-line); }
+  .lane.fork::before { border-color: var(--fork-line); }
+  .lane-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .lane-head .name { font-weight: 800; color: var(--title); }
+  .lane .instr { margin: 6px 0; color: var(--title); display: -webkit-box; -webkit-line-clamp: 3;
+                 -webkit-box-orient: vertical; overflow: hidden; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600;
+          padding: 2px 10px; border-radius: 999px; white-space: nowrap; }
+  .pill.pass { color: var(--ok); background: var(--ok-bg); }
+  .pill.fail { color: var(--fail); background: var(--fail-bg); }
+  .pill.none { color: var(--muted); border: 1px dashed var(--line-strong); }
+  .callout { margin: 14px 0 0; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--fail);
+             background: var(--fail-bg); color: var(--text); }
+  .callout.good { border-color: var(--ok); background: var(--ok-bg); }
+  table.matrix { width: 100%; border-collapse: collapse; }
+  .matrix th, .matrix td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .matrix tr:last-child td { border-bottom: 0; }
+  .matrix th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+  .matrix td.side { font-weight: 700; color: var(--title); white-space: nowrap; }
+  .matrix tr.fork td.side { color: var(--accent-text); }
+  .matrix .pill { cursor: pointer; }
+  .matrix .note { display: block; margin-top: 3px; }
+  .tests-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 14px;
+               border-bottom: 1px solid var(--line); }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .cols > .card { min-width: 0; overflow: hidden; }
+  .cols .card.fork { border-color: var(--fork-line); }
+  .col-head { padding: 9px 14px; border-bottom: 1px solid var(--line); font-weight: 700; color: var(--title); }
+  .card.fork .col-head { background: var(--fork-bg); color: var(--accent-text); }
+  .file-row { display: flex; gap: 10px; padding: 4px 14px; }
+  .file-row .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .plus { color: var(--ok); } .minus { color: var(--fail); }
+  .cols .diff { margin: 8px 10px 10px; }
+  /* ---- rewind ---- */
+  button.rewind { background: var(--fork-bg); color: var(--accent-text); border: 1px solid var(--fork-line);
+                  border-radius: 8px; padding: 2px 10px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+  button.rewind:hover, button.rewind.on { background: var(--accent); color: #fff; }
+  .rw-panel { padding: 14px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+  .rw-panel .rw-title { font-weight: 800; color: var(--title); margin-bottom: 8px; }
+  .rw-options { display: grid; grid-template-columns: 1fr 1fr 1.6fr; gap: 12px; }
+  .rw-option { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 10px;
+               border: 1px solid var(--line-strong); background: var(--panel); }
+  .rw-option.fork { border-color: var(--fork-line); background: var(--fork-bg); }
+  .rw-option h4 { margin: 0; color: var(--title); font-size: 13px; }
+  .rw-option p { margin: 0; color: var(--muted); font-size: 12.5px; flex: 1; }
+  .rw-option textarea, .rw-option input { width: 100%; background: var(--bg); color: var(--text); font: inherit;
+               border: 1px solid var(--line-strong); border-radius: 8px; padding: 6px 8px; }
+  .rw-option textarea { min-height: 64px; resize: vertical; }
+  .rw-option textarea:focus, .rw-option input:focus { outline: none; border-color: var(--accent); }
+  .rw-option .row2 { display: flex; gap: 8px; }
+  .rw-option select, .input { background: var(--bg); color: var(--text); font: inherit; min-width: 0;
+               border: 1px solid var(--line-strong); border-radius: 8px; padding: 6px 8px; }
+  .input:focus, .rw-option select:focus { outline: none; border-color: var(--accent); }
+  textarea.input { width: 100%; min-height: 96px; resize: vertical; }
+  button.secondary { background: none; color: var(--text); border: 1px solid var(--line-strong); border-radius: 8px;
+                     padding: 6px 12px; font: inherit; font-weight: 600; cursor: pointer; align-self: flex-start; }
+  button.secondary:hover { border-color: var(--accent); }
+  button.secondary:disabled { opacity: .6; cursor: progress; }
+  .rw-result { margin-top: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--ok); background: var(--ok-bg); }
+  .rw-result.error { border-color: var(--fail); background: var(--fail-bg); }
+  .rw-warn { margin-bottom: 10px; padding: 8px 12px; border-radius: 10px; background: var(--fail-bg); color: var(--text); }
+  .rw-warn b { color: var(--fail); }
+
+  /* ---- search ---- */
+  .searchbar { position: sticky; top: 0; z-index: 1; display: flex; gap: 8px; align-items: center;
+               padding: 10px 12px; background: var(--panel-2); border-bottom: 1px solid var(--line); }
+  .searchbar input { flex: 1; min-width: 0; background: var(--bg); color: var(--text); font: inherit;
+                     border: 1px solid var(--line-strong); border-radius: 8px; padding: 6px 10px; }
+  .searchbar input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(124,58,237,.35); }
+  .searchbar a.tag { cursor: pointer; }
+  .searchbar a.tag.active { background: var(--fail-bg); color: var(--fail); border-color: var(--fail); }
+  mark { background: rgba(124,58,237,.35); color: var(--title); border-radius: 3px; padding: 0 2px; }
+  .hits { margin-bottom: 14px; overflow: hidden; }
+  .hits .col-head a { color: inherit; text-decoration: none; }
+  .hit { display: flex; gap: 10px; align-items: baseline; padding: 8px 14px; border-top: 1px solid var(--line);
+         color: inherit; text-decoration: none; min-width: 0; }
+  .hit:hover { background: var(--panel-2); }
+  .hit .where { flex: none; width: 150px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .hit .text { flex: 1; min-width: 0; word-break: break-word; }
+  .flash { animation: flash 2.4s ease-out; }
+  @keyframes flash { from { background: rgba(124,58,237,.45); } to { background: transparent; } }
+  .turn-head .tag.pnr { cursor: default; }
+  .session .pnr-count { color: var(--fail); font-weight: 600; }
+
+  /* ---- project and compare picker ---- */
+  .section { margin-bottom: 14px; overflow: hidden; }
+  .section .col-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .section .body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .section .body p { margin: 0; }
+  .section label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .form-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .form-row .input { flex: 1; }
+  .point { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 8px 14px; border-top: 1px solid var(--line); }
+  .point .what { flex: 1; min-width: 0; }
+  .note-ok { color: var(--ok); } .note-fail { color: var(--fail); }
+  .pick { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .pick select { width: 100%; }
+  .summary select.input { padding: 2px 6px; font-size: 12px; }
+
+  /* ---- home graph and ranking ---- */
+  .strip { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0 16px; }
+  .strip .tag { text-decoration: none; }
+  .attention { margin-bottom: 16px; overflow: hidden; }
+  .attention a { display: flex; gap: 10px; align-items: center; padding: 8px 14px; border-top: 1px solid var(--line);
+                 color: var(--text); text-decoration: none; }
+  .attention a:hover { background: var(--panel-2); }
+  .family { margin-bottom: 16px; overflow: hidden; }
+  .family .col-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+  .family .col-head a { color: var(--title); text-decoration: none; }
+  .graph-wrap { overflow-x: auto; padding: 4px 0; }
+  .graph-wrap svg { display: block; }
+  .g-col { fill: var(--muted); font-size: 10px; text-anchor: middle; }
+  .g-label { fill: var(--title); font-size: 12.5px; font-weight: 700; }
+  .g-label.fork { fill: var(--accent-text); }
+  .g-id { fill: var(--muted); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .g-line { stroke: var(--line-strong); stroke-width: 2.5; fill: none; }
+  .g-line.fork { stroke: var(--fork-line); }
+  .g-start { fill: var(--line-strong); }
+  .g-node { fill: var(--panel); stroke: var(--muted); stroke-width: 2.5; cursor: pointer; }
+  .g-node.fork { stroke: var(--accent-text); }
+  .g-node.pnr { stroke: var(--fail); fill: var(--fail-bg); }
+  .g-node:hover { stroke-width: 4; }
+  .g-node.sel { fill: var(--accent); stroke: #fff; }
+  .g-node.live { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { stroke-opacity: .2; } }
+  .g-pnr { fill: var(--fail); font-size: 10px; font-weight: 700; text-anchor: middle; pointer-events: none; }
+  .g-node.gamed { stroke: var(--fail); }
+  .g-test { fill: var(--fail); font-size: 11px; font-weight: 800; text-anchor: middle; pointer-events: none; }
+  /* Test audit: how a session changed the tests. */
+  .integrity { margin: 10px 0; }
+  .integrity.mild { border-color: var(--line-strong); background: var(--panel-2); }
+  .integrity ul { list-style: none; margin: 6px 0 0; padding: 0; }
+  .integrity li { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; padding: 3px 0; }
+  .integrity li code { color: var(--title); overflow-wrap: anywhere; }
+  .integrity .where { color: var(--muted); font-size: 12px; }
+  .integrity li.intended > :not(.review) { opacity: .5; }
+  .integrity li.intended .sev { text-decoration: line-through; }
+  .integrity button.review { font-size: 11.5px; padding: 1px 9px; margin-left: auto; border-radius: 8px; cursor: pointer;
+                             background: none; color: var(--muted); border: 1px solid var(--line-strong); }
+  .integrity button.review:hover { color: var(--title); border-color: var(--accent); }
+  .sev { font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 10px; text-transform: uppercase;
+         letter-spacing: .04em; border: 1px solid transparent; }
+  .sev.high { color: var(--fail); background: var(--fail-bg); border-color: var(--fail); }
+  .sev.medium { color: var(--fail); border-color: var(--fail); }
+  .sev.info { color: var(--muted); border-color: var(--line-strong); }
+  .tag.weak { color: var(--fail); background: var(--fail-bg); border-color: var(--fail); font-weight: 600; text-decoration: none; }
+  .audit-tests { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 10px 0 0; }
+  .audit-tests .pill { cursor: pointer; }
+  .audit-tests .gamed-note { color: var(--fail); }
+  .audit-tests + pre { margin: 8px 0 0; max-height: 260px; overflow: auto; }
+  .audit-card { margin-bottom: 14px; padding-bottom: 12px; }
+  .audit-card > .integrity, .audit-card > .audit-tests, .audit-card > pre { margin-left: 14px; margin-right: 14px; }
+  .audit-card .col-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+  .audit-card .col-head a { color: var(--title); text-decoration: none; }
+  .g-end { font-size: 12px; font-weight: 600; }
+  .g-end.good { fill: var(--ok); } .g-end.bad { fill: var(--fail); } .g-end.muted { fill: var(--muted); } .g-end.live { fill: var(--accent-text); }
+  .node-panel { border-top: 1px solid var(--line); padding: 12px 14px; background: var(--panel-2);
+                display: flex; flex-direction: column; gap: 8px; }
+  .node-panel .np-prompt { color: var(--title); word-break: break-word; }
+  a.btn { display: inline-block; text-decoration: none; padding: 5px 12px; border-radius: 8px; font-weight: 600; font-size: 13px;
+          border: 1px solid var(--line-strong); color: var(--text); }
+  a.btn:hover { border-color: var(--accent); }
+  a.btn.rewind { background: var(--fork-bg); color: var(--accent-text); border-color: var(--fork-line); }
+  a.btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .pill.live { color: var(--accent-text); background: var(--fork-bg); animation: fade 1.4s ease-in-out infinite; }
+  @keyframes fade { 50% { opacity: .55; } }
+  .matrix td.instr { min-width: 220px; max-width: 360px; color: var(--title); }
+  .matrix tr.best td { background: var(--ok-bg); }
+  .matrix td.num { white-space: nowrap; }
+  .rw-option .variant { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px dashed var(--fork-line); }
+  @media (max-width: 760px) {
+    .layout { grid-template-columns: 1fr; height: auto; }
+    aside { max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); }
+    main { padding: 16px; }
+    header .root { display: none; }
+    .branch, .cols { grid-template-columns: 1fr; gap: 12px; }
+    .shared { margin-right: 0; } .shared::after, .lanes::before, .lane::before { display: none; }
+    .lanes { padding-left: 0; grid-auto-rows: auto; }
+    .matrix th, .matrix td { padding: 8px; min-width: 120px; }
+    .hit { flex-direction: column; gap: 4px; } .hit .where { width: auto; }
+    .rw-options { grid-template-columns: 1fr; }
+    .pick { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="#/">
+    <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#7c3aed"/><g stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round"><circle cx="11" cy="8.5" r="2.6"/><circle cx="11" cy="23.5" r="2.6"/><circle cx="21.5" cy="11" r="2.6"/><path d="M11 11.1v9.8M21.5 13.6c0 4.6-10.5 2.6-10.5 7.3"/></g></svg>
+    <h1>Backtrack</h1>
+  </a>
+  <span class="tagline">A flight recorder for AI agents.</span>
+  <nav>
+    <a href="#/" data-nav="home">Home</a>
+    <a href="#/compare" data-nav="compare">Compare</a>
+    <a href="#/audit" data-nav="audit">Test audit</a>
+    <a href="#/project" data-nav="project">Project</a>
+  </nav>
+  <a class="tag pnr" id="hooks-warn" href="#/project" hidden>⚠ not recording</a>
+  <span class="root mono" id="root"></span>
+</header>
+<div class="layout">
+  <aside>
+    <div class="searchbar">
+      <input id="q" type="search" placeholder="Search prompts, commands, files, output…" autocomplete="off">
+      <a class="tag pnr-link" id="pnr-link" href="#/irreversible" title="Points of no return across all sessions">⚠</a>
+    </div>
+    <div id="sessions"></div>
+  </aside>
+  <main id="main"><div class="empty">Select a session.</div></main>
+</div>
+<script>
+const state = { sessions: [], view: "session", current: null, data: null, cmp: null, open: new Set(),
+                project: {}, rewind: {}, auditRunning: new Set() };
+
+function h(tag, attrs, ...children) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (k === "class") el.className = v;
+    else el.setAttribute(k, v);
+  }
+  for (const c of children.flat()) {
+    if (c == null || c === false) continue;
+    el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+  return el;
+}
+
+const api = (path, opts) => fetch(path, opts).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
+async function post(path, body) {
+  const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : `request failed (${r.status})`);
+  return data;
+}
+const fmtTime = (ts) => ts ? new Date(ts).toLocaleString([], {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"}) : "";
+const fmtNum = (n) => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "k" : String(n || 0);
+const fmtMs = (ms) => ms >= 1000 ? (ms / 1000).toFixed(1) + "s" : ms + "ms";
+const oneLine = (s, n = 140) => { s = (s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
+const plural = (n, word, many = word + "s") => `${n} ${n === 1 ? word : many}`;
+const short = (id) => (id || "").slice(0, 8);
+const recording = (hooks) => hooks === "installed" || hooks === "plugin";
+
+// Drop the note Backtrack prepends to a fork's first prompt.
+const stripForkNote = (p) => p && p.startsWith("[Backtrack] ") && p.includes("\n\n") ? p.slice(p.indexOf("\n\n") + 2) : (p || "");
+
+function relPath(p) {
+  const cwd = state.data && state.data.session.cwd;
+  return cwd && p && p.startsWith(cwd.replace(/\/$/, "") + "/") ? p.slice(cwd.replace(/\/$/, "").length + 1) : p;
+}
+
+function describeInput(input) {
+  if (!input || typeof input !== "object") return "";
+  for (const k of ["command", "file_path", "notebook_path", "pattern", "url", "query", "prompt", "description"])
+    if (input[k]) return k.endsWith("path") ? relPath(input[k]) : String(input[k]);
+  return JSON.stringify(input);
+}
+
+const forksOf = (id) => state.sessions.filter(s => s.parent_session === id);
+const compareHref = (parent, child) => `#/compare/${parent}/${child}`;
+
+// ---- sessions sidebar ------------------------------------------------------
+
+function renderSessions() {
+  const el = document.getElementById("sessions");
+  el.replaceChildren();
+  if (!state.sessions.length) {
+    el.append(h("div", {class: "empty"}, "No sessions yet. Run Claude Code in this project, or `backtrack import`."));
+    return;
+  }
+  const selected = state.view === "compare" && state.cmp ? [state.cmp.a, state.cmp.b] : [state.current];
+  for (const s of state.sessions) {
+    el.append(h("div", {class: "session" + (s.parent_session ? " fork" : "") + (selected.includes(s.session_id) ? " selected" : ""),
+                        onclick: () => { location.hash = "#/s/" + s.session_id; }},
+      s.parent_session && h("div", {class: "fork-of"}, `↳ fork of ${short(s.parent_session)} at turn ${s.fork_turn}`),
+      h("div", {class: "prompt"}, oneLine(stripForkNote(s.first_prompt), 200) || "(no prompt)"),
+      h("div", {class: "meta mono"},
+        `${short(s.session_id)} · ${fmtTime(s.last_ts || s.started_at)} · ${plural(s.turns, "turn")} · ${fmtNum(s.output_tokens)} out`,
+        s.irreversible > 0 && h("span", {class: "pnr-count", title: "points of no return"}, ` · ⚠ ${s.irreversible}`))));
+  }
+}
+
+// ---- test audit -------------------------------------------------------------
+
+const SEVERITIES = ["high", "medium", "info"];
+const FINDING_KINDS = {
+  test_file_deleted: "test file deleted", test_removed: "test removed", skip_added: "skip added",
+  assertions_removed: "assertions removed", assertion_trivial: "always-passing assertion",
+  assertion_swallowed: "failures swallowed", check_loosened: "check loosened",
+  expected_changed: "expected value changed", tests_excluded: "tests excluded", only_added: ".only added",
+};
+
+function findingsOf(x) { return (x && x.audit && x.audit.findings) || []; }
+function worstOf(findings) { return SEVERITIES.find(s => findings.some(f => f.severity === s)); }
+function weakened(findings) { return findings.some(f => f.severity !== "info" && !f.intended); }
+function auditCounts(findings) {
+  const open = findings.filter(f => !f.intended), intended = findings.length - open.length;
+  return [...SEVERITIES.map(s => [s, open.filter(f => f.severity === s).length]).filter(([, n]) => n).map(([s, n]) => `${n} ${s}`),
+          intended && `${intended} marked intended`].filter(Boolean).join(", ");
+}
+
+// Every place that holds this session's audit: the open session, the audit page and the home page.
+function auditHolders(sid) {
+  return [state.data && state.data.session.session_id === sid && state.data,
+          ...(state.audit || []).filter(r => r.session.session_id === sid),
+          ...((state.home && state.home.data && state.home.data.sessions) || []).filter(x => x.session_id === sid)].filter(Boolean);
+}
+
+async function reviewFinding(sid, f, verdict) {
+  try {
+    const updated = await post("/api/audit/review", {session_id: sid, kind: f.kind, path: f.path, test: f.test, verdict});
+    for (const holder of auditHolders(sid)) holder.audit = updated;
+  } catch (e) { alert("Could not save the review: " + e.message); }
+  render();
+}
+function firstFindingHref(sid, findings) {
+  const f = findings.find(f => f.seq);
+  return f ? `#/s/${sid}/e/${f.seq}` : "#/s/" + sid;
+}
+
+// The changes a session (or one of its turns) made to the tests, each linked to the tool call.
+function testChanges(findings, sid, {offset = 0, title = true} = {}) {
+  if (!findings.length) return null;
+  const head = weakened(findings) ? "The tests were weakened"
+             : findings.every(f => f.intended) ? "Test changes, marked intended" : "Test changes to check";
+  return h("div", {class: "callout integrity" + (weakened(findings) ? "" : " mild")},
+    title && h("b", {}, head),
+    h("ul", {}, findings.map(f => h("li", {class: f.intended ? "intended" : null},
+      h("span", {class: "sev " + f.severity}, f.severity),
+      h("span", {}, FINDING_KINDS[f.kind] || f.kind),
+      h("code", {}, f.test ? `${relPath(f.path)}::${f.test}` : relPath(f.path)),
+      f.kind !== "test_removed" && h("span", {}, f.detail),
+      f.turn && h("span", {class: "where"}, `turn ${f.turn + offset}, `,
+        f.seq ? h("a", {href: `#/s/${sid}/e/${f.seq}`}, f.tool || "between turns") : (f.tool || "between turns")),
+      h("button", {class: "review", onclick: () => reviewFinding(sid, f, f.intended ? "open" : "intended"),
+                   title: f.intended ? "Count this change again" : "The change was asked for: stop counting it"},
+        f.intended ? "marked intended · undo" : "mark as intended")))));
+}
+
+// The session's final code run with its own tests and with the tests it started with.
+function auditTests(holder, sid) {
+  const a = holder && holder.audit;
+  if (!a || !a.findings.length || !a.base_ref) return null;
+  const t = a.tests || {}, running = state.auditRunning.has(sid), key = "ao:" + sid;
+  const done = !!t.own && (!t.tests_changed || !!t.original);  // else run only what's missing
+  const pill = (run, which) => testPill(run, run && (() => { state.openOutput = {key, which}; toggle(key); }));
+  const shown = state.open.has(key) && state.openOutput && t[state.openOutput.which];
+  return [h("div", {class: "audit-tests"},
+    h("span", {class: "meta"}, "Own tests"), pill(t.own, "own"),
+    t.tests_changed && h("span", {class: "meta"}, "· tests it started with"), t.tests_changed && pill(t.original, "original"),
+    t.gamed && h("b", {class: "gamed-note"}, "only green because it changed the tests"),
+    h("button", {class: "secondary", disabled: running || null, onclick: () => runAuditTests(holder, sid, done),
+                 title: "Run the session's final code with its own tests and with the tests as they were when it started"},
+      running ? "Running…" : done ? "Re-run tests" : "Run tests to confirm")),
+    shown && h("pre", {class: "mono"}, shown.output || "(no output)")];
+}
+
+async function runAuditTests(holder, sid, rerun) {
+  state.auditRunning.add(sid); render();
+  try { holder.audit.tests = await post("/api/audit/tests", {session_id: sid, rerun}); }
+  catch (e) { alert("Running the tests failed: " + e.message); }
+  state.auditRunning.delete(sid); render();
+}
+
+function renderAudit() {
+  const main = document.getElementById("main");
+  const rows = state.audit;
+  if (!rows) { main.replaceChildren(h("div", {class: "empty"}, state.auditError || "Auditing the sessions…")); return; }
+  const flagged = rows.filter(r => findingsOf(r).length)
+    .sort((a, b) => SEVERITIES.indexOf(worstOf(findingsOf(a))) - SEVERITIES.indexOf(worstOf(findingsOf(b))));
+  const unaudited = rows.filter(r => !r.audit || !r.audit.base_ref || !r.audit.end_ref).length;
+  main.replaceChildren(h("div", {},
+    h("h2", {}, "Test audit"),
+    h("p", {class: "meta"}, "How each session changed the tests, from the files it started with (a fork: its fork point) to its last snapshot. ",
+      "Deleting or skipping a failing test, removing assertions or loosening a check makes a run look green without fixing anything. ",
+      "Not every change is cheating: check the prompt of the turn that made it."),
+    h("div", {class: "strip"},
+      h("span", {class: "pill " + (flagged.some(r => weakened(findingsOf(r))) ? "fail" : "pass")},
+        flagged.length ? `${flagged.length} of ${plural(rows.length, "session")} changed the tests` : `No session weakened the tests`),
+      unaudited > 0 && h("span", {class: "meta"}, `${plural(unaudited, "session")} without snapshots (imported or empty) can't be audited.`)),
+    flagged.map(r => {
+      const s = r.session, f = findingsOf(r);
+      return h("div", {class: "card audit-card"},
+        h("div", {class: "col-head"},
+          h("a", {href: firstFindingHref(s.session_id, f)}, oneLine(stripForkNote(s.first_prompt), 120) || "(no prompt)"),
+          h("span", {class: "meta mono"}, `${short(s.session_id)} · ${fmtTime(s.last_ts || s.started_at)}`),
+          s.parent_session && h("span", {class: "tag fork"}, `⑂ fork of ${short(s.parent_session)} at turn ${s.fork_turn}`),
+          h("span", {class: "meta"}, auditCounts(f))),
+        testChanges(f, s.session_id, {offset: s.fork_turn ? s.fork_turn - 1 : 0, title: false}),
+        auditTests(r, s.session_id));
+    })));
+}
+
+async function loadAudit() {
+  state.view = "audit"; state.current = null;
+  renderSessions(); renderAudit();
+  try { state.audit = await api("/api/audit"); state.auditError = null; }
+  catch { state.auditError = "Could not audit the sessions."; }
+  if (state.view === "audit") renderAudit();
+}
+
+// ---- timeline --------------------------------------------------------------
+
+function groupTurns(events) {
+  const turns = new Map();
+  for (const e of events) {
+    if (!turns.has(e.turn)) turns.set(e.turn, []);
+    turns.get(e.turn).push(e);
+  }
+  return turns;
+}
+
+// Pair each tool_pre with its tool_post; keep everything else in order.
+function steps(events) {
+  const out = [], byId = new Map();
+  for (const e of events) {
+    if (e.kind === "tool_pre") {
+      const step = {type: "tool", pre: e, post: null};
+      if (e.tool_use_id) byId.set(e.tool_use_id, step);
+      out.push(step);
+    } else if (e.kind === "tool_post") {
+      const step = e.tool_use_id && byId.get(e.tool_use_id);
+      if (step) step.post = e; else out.push({type: "tool", pre: null, post: e});
+    } else out.push({type: e.kind, event: e});
+  }
+  return out;
+}
+
+function diffView(from, to) {
+  const box = h("div", {class: "diff mono"}, h("div", {class: "none"}, "Loading diff…"));
+  if (!from) { box.replaceChildren(h("div", {class: "none"}, "No earlier snapshot to compare with.")); return box; }
+  api(`/api/diff?from=${from}&to=${to}`).then(({diff}) => {
+    box.replaceChildren();
+    if (!diff.trim()) { box.append(h("div", {class: "none"}, "No file changes.")); return; }
+    for (const line of diff.replace(/\n$/, "").split("\n")) {
+      let cls = "";
+      if (line.startsWith("diff --git")) cls = "file";
+      else if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("index ")) continue;
+      else if (line.startsWith("@@")) cls = "hunk";
+      else if (line.startsWith("+")) cls = "add";
+      else if (line.startsWith("-")) cls = "del";
+      box.append(h("div", {class: cls}, cls === "file" ? line.replace(/^diff --git a\/(.*) b\/.*$/, "$1") : line || " "));
+    }
+  }).catch(() => box.replaceChildren(h("div", {class: "none"}, "Could not load diff.")));
+  return box;
+}
+
+function render() { ({compare: renderCompare, rank: renderRank, home: renderHome, audit: renderAudit}[state.view] || renderSession)(); }
+function toggle(key) { state.open.has(key) ? state.open.delete(key) : state.open.add(key); render(); }
+
+function toolStep(step) {
+  const {pre, post} = step;
+  const name = (pre || post).tool_name;
+  const id = (pre || post).tool_use_id || `seq${(pre || post).seq}`;
+  const status = post ? post.status : "pending";
+  const pnr = (pre && pre.irreversible) || (post && post.irreversible);
+  const changed = post && post.snapshot_ref && post.snapshot_ref !== post.prev_snapshot_ref;
+  const duration = post && post.input && post.input.duration_ms;
+  const detailKey = "d:" + id, diffKey = "f:" + id;
+
+  const row = h("div", {class: "row", onclick: () => toggle(detailKey)},
+    h("span", {class: "dot " + status, title: status}),
+    h("span", {class: "tool"}, name),
+    h("span", {class: "desc mono"}, pre ? describeInput(pre.input) : ""),
+    pnr && h("span", {class: "tag pnr", title: "Rewinding past this restores files and conversation, but not the outside effect"}, "⚠ point of no return"),
+    status !== "ok" && h("span", {class: "tag" + (status === "pending" ? "" : " fail")},
+      status === "pending" ? "no result (in flight, denied or crashed)" : status),
+    duration != null && h("span", {class: "meta"}, fmtMs(duration)),
+    changed && h("button", {class: "link", onclick: (ev) => { ev.stopPropagation(); toggle(diffKey); }},
+      state.open.has(diffKey) ? "hide diff" : "diff"));
+
+  const parts = [row];
+  if (state.open.has(detailKey)) {
+    parts.push(h("div", {class: "detail"},
+      pre && [h("h4", {}, "Input"), h("pre", {class: "block"}, JSON.stringify(pre.input, null, 2))],
+      post && post.output && [h("h4", {}, "Output"), h("pre", {class: "block"}, post.output)],
+      h("div", {class: "meta mono", style: "margin-top:6px"},
+        [pre && `#${pre.seq} ${pre.ts}`, post && `#${post.seq} ${post.ts}`,
+         post && post.snapshot_ref && `snapshot ${post.snapshot_ref.slice(0, 7)}`].filter(Boolean).join("  ·  "))));
+  }
+  if (changed && state.open.has(diffKey)) parts.push(diffView(post.prev_snapshot_ref, post.snapshot_ref));
+  return h("div", {class: "step" + (pnr ? " pnr" : ""), "data-seq": [pre && pre.seq, post && post.seq].filter(Boolean).join(" ")}, parts);
+}
+
+function turnView(turn, events, offset) {
+  if (turn === 0) {
+    return h("div", {class: "card turn"}, events.map(e => h("div", {class: "sysline", "data-seq": e.seq}, sysText(e))));
+  }
+  const prompt = events.find(e => e.kind === "prompt");
+  const stop = [...events].reverse().find(e => e.kind === "stop");
+  const tools = events.filter(e => e.kind === "tool_pre").length;
+  const refs = events.filter(e => e.snapshot_ref).map(e => e.snapshot_ref);
+  const turnDiffKey = "t:" + turn, promptKey = "p:" + turn;
+  const t = stop && stop.tokens;
+  const tokens = t ? `in ${fmtNum(t.input + t.cache_read + t.cache_creation)} · out ${fmtNum(t.output)} · ` : "";
+  const hasChanges = refs.length > 1 && refs[0] !== refs[refs.length - 1];
+  const sid = state.data.session.session_id;
+  const forkedHere = forksOf(sid).filter(f => f.fork_turn === turn + offset);
+  const pnr = events.filter(e => e.kind === "tool_pre" && e.irreversible).length;
+
+  const body = [];
+  for (const s of steps(events)) {
+    if (s.type === "tool") body.push(toolStep(s));
+    else if (s.type === "stop") body.push(h("div", {class: "final", "data-seq": s.event.seq}, h("span", {class: "meta"}, "Final reply"), s.event.output || ""));
+    else if (s.type !== "prompt") body.push(h("div", {class: "sysline", "data-seq": s.event.seq}, sysText(s.event)));
+  }
+  const promptText = prompt ? stripForkNote(prompt.input && prompt.input.prompt) : "";
+  return h("section", {class: "card turn", id: "turn-" + turn},
+    h("div", {class: "turn-head"},
+      h("span", {class: "label"}, `Turn ${turn + offset}`),
+      weakened(findingsOf(state.data).filter(f => f.turn === turn)) && h("span", {class: "tag weak"}, "✕ tests weakened"),
+      pnr > 0 && h("span", {class: "tag pnr", title: "Rewinding to before this turn restores files and conversation, but not these outside effects"},
+        `⚠ ${pnr} point${pnr === 1 ? "" : "s"} of no return`),
+      forkedHere.map(f => h("a", {class: "tag fork", href: compareHref(sid, f.session_id), title: "Compare this turn with its fork"},
+        `⑂ forked → ${short(f.session_id)}`)),
+      forkedHere.length > 0 && h("a", {class: "tag fork", href: `#/rank/${sid}/${forkedHere[0].fork_turn}`,
+        title: "Rank this turn's original and forks by their test results"}, `rank ${forkedHere.length + 1} branches →`),
+      h("span", {class: "meta"}, `${tokens}${plural(tools, "tool call")}`),
+      hasChanges && h("button", {class: "link", onclick: () => toggle(turnDiffKey)},
+        state.open.has(turnDiffKey) ? "hide turn diff" : "files changed this turn"),
+      prompt && prompt.snapshot_ref && h("button", {class: "rewind" + (state.open.has("rw:" + turn) ? " on" : ""),
+        title: `Go back to the start of turn ${turn + offset}`, onclick: () => toggle("rw:" + turn)}, "⟲ Rewind to here")),
+    prompt && prompt.snapshot_ref && state.open.has("rw:" + turn) && rewindPanel(turn, offset, prompt),
+    prompt && h("div", {class: "prompt-text" + (state.open.has(promptKey) ? " open" : ""), "data-seq": prompt.seq}, promptText.trim()),
+    prompt && promptText.split("\n").length > 6 && h("div", {class: "more"},
+      h("button", {class: "link", onclick: () => toggle(promptKey)}, state.open.has(promptKey) ? "show less" : "show full prompt")),
+    hasChanges && state.open.has(turnDiffKey) && diffView(refs[0], refs[refs.length - 1]),
+    testChanges(findingsOf(state.data).filter(f => f.turn === turn), sid, {offset}),
+    body);
+}
+
+// ---- rewind / fork ----------------------------------------------------------
+
+const PERMISSION_MODES = [["acceptEdits", "accept edits (default)"], ["default", "ask (default mode)"],
+                          ["plan", "plan only"], ["bypassPermissions", "bypass all checks"]];
+
+const MAX_WAYS = 5;
+
+function rewindPanel(turn, offset, prompt) {
+  const session = state.data.session, sid = session.session_id, shown = turn + offset;
+  const key = `${sid}:${turn}`;
+  const rw = state.rewind[key] || (state.rewind[key] = {
+    instruction: "", allow: state.project.test_command ? `Bash(${state.project.test_command}:*)` : "", model: "",
+    permission: "acceptEdits", more: [],
+    busy: null, result: null, error: null});
+  const later = state.data.events.filter(e => e.kind === "tool_pre" && e.irreversible && e.seq > prompt.seq);
+  // A fork's first turn is the parent's turn K: fork from the parent to keep the earlier conversation.
+  const forkFrom = session.parent_session && turn === 1 ? {session_id: session.parent_session, turn: session.fork_turn}
+                                                         : {session_id: sid, turn};
+  const run = async (what, fn) => {
+    Object.assign(rw, {busy: what, result: null, error: null}); renderSession();
+    try { rw.result = await fn(); } catch (e) { rw.error = e.message; }
+    rw.busy = null; renderSession();
+  };
+  const restore = () => {
+    if (!confirm(`Restore ${session.cwd} to how it was at the start of turn ${shown}?\n\n` +
+                 "Your current files are snapshotted first, so you can undo this. " +
+                 "Don't do this while an agent is still working in that folder.")) return;
+    run("restore", async () => {
+      const r = await post("/api/rewind", {session_id: sid, turn, mode: "restore"});
+      return {kind: "restored", ...r};
+    });
+  };
+  const undo = (snapshot) => run("undo", async () => ({kind: "undone", ...(await post("/api/undo", {session_id: sid, snapshot}))}));
+  const copy = () => run("copy", async () => ({kind: "copied", ...(await post("/api/rewind", {session_id: sid, turn, mode: "copy"}))}));
+  const allowed = () => rw.allow.split(",").map(t => t.trim()).filter(Boolean);
+  const fork = () => {
+    if (!rw.instruction.trim()) { rw.error = "Write the new instruction for the fork first."; renderSession(); return; }
+    const variants = [{instruction: rw.instruction, model: rw.model}, ...rw.more].filter(v => v.instruction.trim());
+    if (variants.length > 1) return run("fork", async () => {
+      await post("/api/rank/forks", {...forkFrom, permission_mode: rw.permission, allowed_tools: allowed(),
+        variants: variants.map(v => ({instruction: v.instruction, model: v.model.trim() || null}))});
+      rw.more = []; rw.instruction = "";
+      await loadSessions();
+      location.hash = `#/rank/${forkFrom.session_id}/${forkFrom.turn}`;
+      return {kind: "forked"};
+    });
+    run("fork", async () => {
+      const r = await post("/api/fork", {...forkFrom, instruction: rw.instruction, model: rw.model.trim() || null,
+                                         permission_mode: rw.permission,
+                                         allowed_tools: allowed()});
+      await loadSessions();
+      location.hash = "#/s/" + r.session_id;
+      return {kind: "forked", ...r};
+    });
+  };
+  const field = (tag, name, attrs, ...children) => {
+    const el = h(tag, {...attrs, oninput: (ev) => { rw[name] = ev.target.value; }}, ...children);
+    el.value = rw[name];
+    return el;
+  };
+  const busy = (what, label, busyLabel) => rw.busy === what ? busyLabel : label;
+  const vfield = (v, name, tag, attrs) => {
+    const el = h(tag, {...attrs, oninput: (ev) => { v[name] = ev.target.value; }});
+    el.value = v[name];
+    return el;
+  };
+  const ways = 1 + rw.more.length;
+
+  let result = null;
+  if (rw.error) result = h("div", {class: "rw-result error"}, rw.error);
+  else if (rw.result && rw.result.kind === "restored")
+    result = h("div", {class: "rw-result"}, `Restored `, h("code", {}, rw.result.folder), ` to the start of turn ${shown}. `,
+      h("button", {class: "link", onclick: () => undo(rw.result.undo)}, "Undo"),
+      h("div", {class: "meta", style: "margin-top:4px"}, `Your files from before are kept in snapshot ${rw.result.undo.slice(0, 7)}.`));
+  else if (rw.result && rw.result.kind === "undone")
+    result = h("div", {class: "rw-result"}, "Undone: ", h("code", {}, rw.result.folder), " is back as it was before the rewind.");
+  else if (rw.result && rw.result.kind === "copied")
+    result = h("div", {class: "rw-result"}, `Files as at the start of turn ${shown} are in `, h("code", {}, rw.result.folder));
+
+  return h("div", {class: "rw-panel"},
+    h("div", {class: "rw-title"}, `Go back to the start of turn ${shown}`),
+    later.length > 0 && h("div", {class: "rw-warn"}, h("b", {}, `⚠ ${plural(later.length, "point")} of no return from here on. `),
+      "Files and conversation can be rewound, but these already happened: ",
+      later.map((e, i) => [i ? ", " : "", h("code", {}, oneLine(describeInput(e.input), 60))])),
+    h("div", {class: "rw-options"},
+      h("div", {class: "rw-option"},
+        h("h4", {}, "Restore files here"),
+        h("p", {}, `Put this session's folder back as it was before turn ${shown}. Your current files are snapshotted first, so you can undo.`),
+        h("button", {class: "secondary", disabled: !!rw.busy || null, onclick: restore}, busy("restore", "Restore files", "Restoring…"))),
+      h("div", {class: "rw-option"},
+        h("h4", {}, "Copy to a new folder"),
+        h("p", {}, `Check out the files from before turn ${shown} into .backtrack/forks/ and leave this folder alone.`),
+        h("button", {class: "secondary", disabled: !!rw.busy || null, onclick: copy}, busy("copy", "Copy files", "Copying…"))),
+      h("div", {class: "rw-option fork"},
+        h("h4", {}, `Fork: redo turn ${shown} with a new instruction`),
+        h("p", {}, `Claude Code continues the conversation from the end of turn ${shown - 1 || "0 (a fresh start)"}, in a new folder, and is recorded as a fork you can compare.`),
+        field("textarea", "instruction", {placeholder: `Instead of: “${oneLine(stripForkNote(prompt.input && prompt.input.prompt), 90)}”`}),
+        h("div", {class: "row2"},
+          field("input", "allow", {placeholder: "Also allow, e.g. Bash(uv run pytest:*)", title: "Extra tool permissions, comma-separated"}),
+          field("input", "model", {placeholder: "model (default)", style: "max-width:140px"})),
+        h("div", {class: "row2", style: "align-items:center"},
+          h("span", {class: "meta"}, "Permissions"),
+          field("select", "permission", {title: "Claude Code permission mode for the fork"},
+            ...PERMISSION_MODES.map(([v, label]) => h("option", {value: v}, label)))),
+        rw.more.map((v, i) => h("div", {class: "variant"},
+          vfield(v, "instruction", "textarea", {placeholder: `Way ${i + 2}: another instruction`}),
+          h("div", {class: "row2", style: "align-items:center"},
+            vfield(v, "model", "input", {placeholder: "model (default)", style: "max-width:140px"}),
+            h("button", {class: "link", onclick: () => { rw.more.splice(i, 1); renderSession(); }}, "remove")))),
+        ways < MAX_WAYS && h("button", {class: "link", style: "align-self:flex-start",
+                                        onclick: () => { rw.more.push({instruction: "", model: ""}); renderSession(); }},
+          ways > 1 ? "+ add another way" : "+ try several ways at once and rank them"),
+        h("button", {class: "primary", disabled: !!rw.busy || null, onclick: fork, style: "align-self:flex-start"},
+          busy("fork", ways > 1 ? `⑂ Fork ${ways} ways and rank` : "⑂ Fork and run", "Starting…")))),
+    result);
+}
+
+function sysText(e) {
+  if (e.kind === "session_start") return `Session started (${(e.input || {}).source}) · ${fmtTime(e.ts)}`;
+  if (e.kind === "session_end") return `Session ended (${(e.input || {}).reason}) · ${fmtTime(e.ts)}`;
+  if (e.kind === "error" && e.input && e.input.fork) return `The fork stopped with an error: ${e.input.fork}`;
+  if (e.kind === "error") return `Error: ${JSON.stringify(e.input)}`;
+  return e.kind;
+}
+
+function renderSession() {
+  const main = document.getElementById("main");
+  const scroll = main.scrollTop;
+  if (!state.data) { main.replaceChildren(h("div", {class: "empty"}, "Select a session.")); return; }
+  const {session, events} = state.data;
+  const tools = events.filter(e => e.kind === "tool_pre").length;
+  const pnr = events.filter(e => e.kind === "tool_pre" && e.irreversible).length;
+  const imported = events.some(e => e.kind === "session_start" && e.input && e.input.source === "import");
+  const outTokens = events.reduce((n, e) => n + ((e.tokens && e.tokens.output) || 0), 0);
+  const turns = groupTurns(events);
+  const nTurns = Math.max(0, ...turns.keys());
+  main.replaceChildren(
+    h("h2", {class: "mono"}, session.session_id),
+    h("div", {class: "summary meta"},
+      h("span", {}, session.cwd || ""),
+      h("span", {}, `started ${fmtTime(session.started_at)}`),
+      h("span", {}, `${plural(nTurns, "turn")} · ${plural(tools, "tool call")} · ${fmtNum(outTokens)} output tokens`),
+      pnr > 0 && h("a", {class: "tag pnr", href: `#/s/${session.session_id}/e/${events.find(e => e.kind === "tool_pre" && e.irreversible).seq}`,
+        title: "Jump to the first one"}, `⚠ ${pnr} point${pnr === 1 ? "" : "s"} of no return`),
+      findingsOf(state.data).length > 0 && h("a", {class: "tag weak", href: firstFindingHref(session.session_id, findingsOf(state.data)),
+        title: "How this session changed the tests"}, `✕ ${plural(findingsOf(state.data).length, "test change")} to review`),
+      imported && h("span", {class: "tag", title: "Imported from a transcript: no workspace snapshots"}, "imported"),
+      session.parent_session && h("a", {class: "tag fork", href: "#/s/" + session.parent_session},
+        `⑂ fork of ${short(session.parent_session)} at turn ${session.fork_turn}`),
+      session.parent_session && h("a", {class: "tag fork", href: compareHref(session.parent_session, session.session_id)},
+        "compare with original →"),
+      compareWith(session)),
+    testChanges(findingsOf(state.data).filter(f => !f.turn), session.session_id),
+    auditTests(state.data, session.session_id),
+    events.length ? "" : h("div", {class: "card sysline", style: "padding:14px"},
+      session.parent_session ? `Starting Claude Code in ${session.cwd}… this page updates as the fork works.` : "No events yet."),
+    ...[...turns.entries()].map(([turn, evs]) => turnView(turn, evs, session.fork_turn ? session.fork_turn - 1 : 0)));
+  main.scrollTop = scroll;
+}
+
+// A select of the other sessions, parent and forks first; picking one opens the compare page.
+function compareWith(session) {
+  const id = session.session_id;
+  const rank = (s) => s.session_id === session.parent_session ? 0 : s.parent_session === id ? 1 : 2;
+  const others = state.sessions.filter(s => s.session_id !== id).sort((x, y) => rank(x) - rank(y));
+  if (!others.length) return null;
+  return h("select", {class: "input", title: "Compare this session with another",
+                      onchange: (ev) => { const o = ev.target.value;
+                        location.hash = o === session.parent_session ? compareHref(o, id) : compareHref(id, o); }},
+    h("option", {value: ""}, "Compare with…"),
+    others.map(s => h("option", {value: s.session_id}, sessionOption(s, id))));
+}
+
+function sessionOption(s, current) {
+  const rel = s.session_id === (sessionById(current) || {}).parent_session ? "parent · "
+            : s.parent_session ? `fork of ${short(s.parent_session)} @ ${s.fork_turn} · ` : "";
+  return `${short(s.session_id)} · ${rel}${oneLine(stripForkNote(s.first_prompt), 60) || "(no prompt)"}`;
+}
+
+// ---- compare ---------------------------------------------------------------
+
+function passed(run) { return run && run.exit_code === 0; }
+
+function testPill(run, onclick) {
+  if (!run) return h("span", {class: "pill none"}, "not run");
+  return h("span", {class: "pill " + (passed(run) ? "pass" : "fail"), onclick, title: "Show output"},
+    passed(run) ? "✓" : "✗", run.summary);
+}
+
+// The turn range and instruction of each side, from its events.
+function sideInfo(side, other, events) {
+  const s = side.session;
+  if (other.session.parent_session === s.session_id) {
+    const k = other.session.fork_turn;
+    const p = events.find(e => e.kind === "prompt" && e.turn === k);
+    return {name: "Original", fork: false, turns: s.turns > k ? `turns ${k}–${s.turns}` : `turn ${k}`,
+            prompt: p && p.input && p.input.prompt};
+  }
+  if (s.parent_session) {
+    const k = s.fork_turn, last = k + s.turns - 1;
+    return {name: "Fork", fork: true, turns: last > k ? `turns ${k}–${last}` : `turn ${k}`,
+            prompt: stripForkNote(s.first_prompt)};
+  }
+  return {name: "Session", fork: false, turns: plural(s.turns, "turn"), prompt: s.first_prompt};
+}
+
+function verdict(label, row) {
+  if (!row || !row.original) return null;
+  if (row.tests_changed && passed(row.own) && !passed(row.original))
+    return h("div", {class: "callout"}, h("b", {}, `${label} only looks green because it changed the tests. `),
+      `It passes its own tests (${row.own.summary}) but fails the original ones (${row.original.summary}).`);
+  if (passed(row.original))
+    return h("div", {class: "callout good"}, h("b", {}, `${label} passes the original tests `), `(${row.original.summary}).`);
+  return null;
+}
+
+function filesCard(label, info, files, ref, base) {
+  const added = files.reduce((n, f) => n + (f.added || 0), 0), deleted = files.reduce((n, f) => n + (f.deleted || 0), 0);
+  const key = "cd:" + label;
+  return h("div", {class: "card" + (info.fork ? " fork" : "")},
+    h("div", {class: "col-head"}, `${label} · ${info.name} `,
+      h("span", {class: "meta"}, `${plural(files.length, "file")} `), h("span", {class: "plus mono"}, `+${added} `), h("span", {class: "minus mono"}, `−${deleted}`)),
+    files.length ? files.map(f => h("div", {class: "file-row mono"},
+      h("span", {class: "path", title: f.path}, f.path),
+      f.added == null ? h("span", {class: "meta"}, "binary") : [h("span", {class: "plus"}, `+${f.added}`), h("span", {class: "minus"}, `−${f.deleted}`)]))
+      : h("div", {class: "sysline"}, "No changes since the base."),
+    files.length > 0 && h("div", {class: "more", style: "padding-top:6px"},
+      h("button", {class: "link", onclick: () => toggle(key)}, state.open.has(key) ? "hide diff" : "show diff")),
+    state.open.has(key) && diffView(base, ref));
+}
+
+// Show the cached results for another test command.
+async function changeTestCommand(command) {
+  const c = state.cmp;
+  if (!command.trim() || command === c.data.tests.command) return;
+  c.command = command;
+  try {
+    c.data.tests = (await api(`/api/compare?a=${encodeURIComponent(c.a)}&b=${encodeURIComponent(c.b)}&test_command=${encodeURIComponent(command)}`)).tests;
+  } catch (e) { c.error = "Could not load results for that command."; }
+  renderCompare();
+}
+
+async function runTests(rerun) {
+  const c = state.cmp;
+  c.running = true; renderCompare();
+  try {
+    c.data.tests = await api("/api/compare/tests", {method: "POST", headers: {"Content-Type": "application/json"},
+                                                    body: JSON.stringify({a: c.a, b: c.b, rerun, test_command: c.command})});
+  } catch (e) { c.error = "Running the tests failed: " + e.message; }
+  c.running = false; renderCompare();
+}
+
+function renderCompare() {
+  const main = document.getElementById("main");
+  const scroll = main.scrollTop;
+  const c = state.cmp;
+  if (!c || c.error && !c.data) { main.replaceChildren(h("div", {class: "empty"}, c ? c.error : "Loading…")); return; }
+  if (!c.data) { main.replaceChildren(h("div", {class: "empty"}, "Loading comparison…")); return; }
+  const d = c.data;
+  const A = sideInfo(d.a, d.b, c.events.a), B = sideInfo(d.b, d.a, c.events.b);
+  const rows = Object.fromEntries(d.tests.rows.map(r => [r.side, r]));
+  const missing = d.tests.rows.some(r => !r.own || !r.original);
+  const forkTurn = (d.b.session.parent_session ? d.b.session : d.a.session).fork_turn;
+  const shared = forkTurn > 1 ? `Turns 1–${forkTurn - 1}` : "Start";
+
+  const lane = (label, side, info, row) => h("a", {class: "card lane" + (info.fork ? " fork" : ""), href: "#/s/" + side.session.session_id, style: "text-decoration:none;color:inherit"},
+    h("div", {class: "lane-head"},
+      h("span", {class: "name"}, `${label} · ${info.name}`),
+      h("span", {class: "meta mono"}, `${short(side.session.session_id)} · ${info.turns}`),
+      row && row.original && h("span", {style: "margin-left:auto"}, testPill(row.original))),
+    h("div", {class: "instr"}, oneLine(info.prompt, 300) || "(no prompt)"));
+
+  const cell = (row, which) => {
+    const run = row[which];
+    const key = `out:${row.side}:${which}`;
+    const sameAsOwn = which === "original" && !row.tests_changed;
+    return h("td", {},
+      testPill(run, run ? () => toggle(key) : null),
+      which === "own" && row.tests_changed && h("span", {class: "note meta"}, "⚠ tests differ from the base"),
+      sameAsOwn && run && h("span", {class: "note meta"}, "same tests as own"),
+      run && state.open.has(key) && h("pre", {class: "block", style: "margin-top:8px"}, run.output || "(no output)",
+        `\n— exit ${run.exit_code} · ${fmtMs(run.duration_ms)} · ${fmtTime(run.ts)}`));
+  };
+  const sideName = {base: `Base (${d.base.label})`, a: `A · ${A.name}`, b: `B · ${B.name}`};
+
+  main.replaceChildren(h("div", {},
+    h("h2", {}, "Compare branches"),
+    h("div", {class: "summary meta"},
+      h("span", {}, `Both sides are compared with the files at the ${d.base.label}`),
+      h("span", {class: "mono"}, `base ${d.base.ref.slice(0, 7)}`),
+      h("a", {href: "#/compare"}, "compare other sessions")),
+    h("div", {class: "branch"},
+      h("div", {class: "card shared"}, h("div", {class: "name", style: "font-weight:800;color:var(--title)"}, shared),
+        h("div", {class: "meta"}, forkTurn > 1 ? "shared history" : "shared starting files")),
+      h("div", {class: "lanes"}, lane("A", d.a, A, rows.a), lane("B", d.b, B, rows.b))),
+    verdict("A", rows.a), verdict("B", rows.b),
+
+    h("h3", {}, "Tests"),
+    h("div", {class: "card", style: "overflow:hidden"},
+      h("div", {class: "tests-bar"},
+        h("span", {class: "meta"}, "Command "),
+        (() => { const el = h("input", {class: "input mono", style: "flex:1;min-width:180px", title: "Test command for this comparison (the default is set on the Project page)",
+                                       onchange: (ev) => changeTestCommand(ev.target.value)});
+                 el.value = d.tests.command; return el; })(),
+        c.running ? h("span", {class: "meta"}, "Running tests…") : null,
+        h("button", {class: "primary", disabled: c.running || null, onclick: () => runTests(!missing)},
+          missing ? "Run tests" : "Re-run")),
+      h("div", {style: "overflow-x:auto"}, h("table", {class: "matrix"},
+        h("thead", {}, h("tr", {}, h("th", {}, "Code"), h("th", {}, "Own tests"), h("th", {}, `Original tests (as at the ${d.base.label})`))),
+        h("tbody", {}, d.tests.rows.map(r => h("tr", {class: (r.side === "a" ? A : r.side === "b" ? B : {}).fork ? "fork" : ""},
+          h("td", {class: "side"}, sideName[r.side]), cell(r, "own"), cell(r, "original"))))))),
+    c.error && h("div", {class: "callout"}, c.error),
+
+    h("h3", {}, `Files changed since the ${d.base.label}`),
+    h("div", {class: "cols"}, filesCard("A", A, d.a.files, d.a.ref, d.base.ref), filesCard("B", B, d.b.files, d.b.ref, d.base.ref)),
+    h("div", {class: "more", style: "padding:10px 0 0"},
+      h("button", {class: "link", onclick: () => toggle("direct")}, state.open.has("direct") ? "hide direct diff" : "show direct diff A → B")),
+    state.open.has("direct") && h("div", {class: "card", style: "overflow:hidden"}, diffView(d.a.ref, d.b.ref))));
+  main.scrollTop = scroll;
+}
+
+async function loadCompare(a, b) {
+  state.view = "compare"; state.current = null; state.open.clear();
+  state.cmp = {a, b, data: null, events: null, running: false, error: null, command: null};
+  state.pick = {a, b};
+  renderSessions(); renderCompare();
+  try {
+    const [data, ea, eb] = await Promise.all([
+      api(`/api/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`),
+      api("/api/sessions/" + encodeURIComponent(a)), api("/api/sessions/" + encodeURIComponent(b))]);
+    Object.assign(state.cmp, {data, events: {a: ea.events, b: eb.events}});
+  } catch (e) { state.cmp.error = "Could not compare these sessions."; }
+  renderCompare();
+}
+
+function renderPicker() {
+  const main = document.getElementById("main");
+  const ss = state.sessions;
+  if (ss.length < 2) { main.replaceChildren(h("div", {class: "empty"}, "Compare needs two sessions. Fork a turn from a session's timeline to make one.")); return; }
+  if (!state.pick) {
+    const latest = ss.filter(s => s.parent_session).sort((x, y) => (y.last_ts || "").localeCompare(x.last_ts || ""))[0];
+    state.pick = latest ? {a: latest.parent_session, b: latest.session_id} : {a: ss[1].session_id, b: ss[0].session_id};
+  }
+  const p = state.pick;
+  const select = (side) => {
+    const el = h("select", {class: "input", onchange: (ev) => { p[side] = ev.target.value; renderPicker(); }},
+      ss.map(s => h("option", {value: s.session_id}, sessionOption(s))));
+    el.value = p[side];
+    return h("label", {}, side === "a" ? "A (usually the original)" : "B (usually the fork)", el);
+  };
+  main.replaceChildren(h("div", {},
+    h("h2", {}, "Compare"),
+    h("div", {class: "summary meta"}, "Pick two sessions, usually a session and its fork. Compare shows the files each changed and runs the tests on both."),
+    h("div", {class: "card section"}, h("div", {class: "body"},
+      h("div", {class: "pick"}, select("a"), select("b")),
+      h("div", {class: "form-row"},
+        h("button", {class: "primary", disabled: p.a === p.b || null, onclick: () => { location.hash = compareHref(p.a, p.b); }}, "Compare"),
+        p.a === p.b && h("span", {class: "meta"}, "Pick two different sessions."))))));
+}
+
+// Paths under the home folder, shown as ~/…
+const tilde = (p) => (p || "").replace(/^\/(Users|home)\/[^/]+/, "~");
+
+function renderProject() {
+  const main = document.getElementById("main");
+  const p = state.project, ui = state.proj;
+  if (!p.root) { main.replaceChildren(h("div", {class: "empty"}, "Loading…")); return; }
+  const busy = (what) => ui.busy === what;
+  const act = async (what, fn) => {
+    ui.busy = what; ui.msg[what] = null; renderProject();
+    try { ui.msg[what] = {ok: true, ...(await fn())}; }
+    catch (e) { ui.msg[what] = {ok: false, text: e.message}; }
+    ui.busy = null; renderProject();
+  };
+  const note = (what) => ui.msg[what] && h("div", {class: ui.msg[what].ok ? "note-ok" : "note-fail"}, ui.msg[what].text);
+  const folderName = (f) => f === p.folders[0] ? "project folder" : "fork " + f.split("/").pop();
+  const hooks = {installed: ["pass", "✓ recording"], plugin: ["pass", "✓ recording (plugin)"], paused: ["none", "paused"],
+                 outdated: ["fail", "hooks outdated"], missing: ["fail", "not recording"]}[p.hooks] || ["none", p.hooks];
+
+  const testsForm = () => {
+    const cmd = h("input", {class: "input mono", oninput: (ev) => { ui.form.test_command = ev.target.value; }});
+    cmd.value = ui.form.test_command;
+    const globs = h("textarea", {class: "input mono", oninput: (ev) => { ui.form.test_globs = ev.target.value; }});
+    globs.value = ui.form.test_globs;
+    return [h("label", {}, "Test command", cmd), h("label", {}, "Test files (one pattern per line)", globs)];
+  };
+  const restore = (ref, label) => {
+    if (!confirm(`Put ${folderName(ui.folder)} back to ${label}? Its current files are snapshotted first, so this can be undone.`)) return;
+    act("restore", async () => {
+      const r = await post("/api/restore-snapshot", {folder: ui.folder, snapshot: ref});
+      await loadPoints();
+      return {text: `Restored ${folderName(ui.folder)} to ${ref.slice(0, 7)}. The state before is ${r.undo.slice(0, 7)}, now at the top of the list.`};
+    });
+  };
+  const manual = h("input", {class: "input mono", placeholder: "snapshot, e.g. 6c0cb9f", oninput: (ev) => { ui.manual = ev.target.value; }});
+  manual.value = ui.manual || "";
+  const folderSelect = h("select", {class: "input", onchange: (ev) => { ui.folder = ev.target.value; ui.points = null; renderProject(); loadPoints(); }},
+    p.folders.map(f => h("option", {value: f}, folderName(f))));
+  folderSelect.value = ui.folder;
+
+  main.replaceChildren(h("div", {},
+    h("h2", {}, "Project"),
+    h("div", {class: "summary meta"}, h("span", {class: "mono"}, tilde(p.root)), h("span", {class: "mono"}, "data in " + tilde(p.dir))),
+
+    h("div", {class: "card section"},
+      h("div", {class: "col-head"}, "Recording", h("span", {class: "pill " + hooks[0]}, hooks[1])),
+      h("div", {class: "body"},
+        h("p", {}, "Hooks in ", h("code", {}, ".claude/settings.local.json"), " record every Claude Code session started in this folder. ",
+          {installed: "They are installed and up to date.", outdated: "They point at an older Backtrack: repair them.",
+           plugin: "This folder is recorded by the Backtrack plugin for Claude Code, so it needs no hooks of its own.",
+           paused: "Recording is paused: run `backtrack resume` in this folder to record again."}[p.hooks]
+            || "Install them (or the Backtrack plugin for Claude Code), then start a new Claude Code session here."),
+        h("div", {class: "form-row"},
+          h("button", {class: p.hooks === "installed" ? "secondary" : "primary", disabled: !!ui.busy || null,
+                       onclick: () => act("install", async () => { const r = await post("/api/install", {}); await refreshProject();
+                         return {text: r.hooks === "installed" ? "Hooks installed. New sessions in this folder are recorded." : "Hooks written, status: " + r.hooks}; })},
+            busy("install") ? "Installing…" : p.hooks === "installed" ? "Reinstall hooks" : p.hooks === "outdated" ? "Repair hooks" : "Install hooks"),
+          h("span", {class: "meta"}, "same as ", h("code", {}, "backtrack install"))),
+        note("install"))),
+
+    h("div", {class: "card section"},
+      h("div", {class: "col-head"}, "Import past sessions"),
+      h("div", {class: "body"},
+        h("p", {}, `${plural(p.transcripts.files, "Claude Code transcript")} for this folder in `, h("code", {}, tilde(p.transcripts.dir)),
+          `, ${p.transcripts.not_recorded} not in the log yet. Imported sessions have their prompts, tool calls and replies, but no file snapshots.`),
+        h("div", {class: "form-row"},
+          h("button", {class: "primary", disabled: !!ui.busy || !p.transcripts.not_recorded || null,
+                       onclick: () => act("import", async () => { const r = await post("/api/import", {}); ui.imported = r.imported;
+                         await Promise.all([loadSessions(), refreshProject()]);
+                         return {text: `${plural(r.imported.length, "session")} imported, ${r.skipped} already recorded.`}; })},
+            busy("import") ? "Importing…" : p.transcripts.not_recorded ? `Import ${plural(p.transcripts.not_recorded, "session")}` : "Nothing to import"),
+          h("span", {class: "meta"}, "same as ", h("code", {}, "backtrack import"))),
+        note("import"),
+        ui.imported && ui.imported.length > 0 && h("div", {class: "form-row"},
+          ui.imported.map(id => h("a", {class: "tag", href: "#/s/" + id}, short(id)))))),
+
+    h("div", {class: "card section"},
+      h("div", {class: "col-head"}, "Tests for compare"),
+      h("div", {class: "body"},
+        h("p", {class: "meta"}, "Compare runs this command on each side's files, in a temporary copy. The patterns decide which files count as tests, so a side's code can be tested with the original tests."),
+        testsForm(),
+        h("div", {class: "form-row"},
+          h("button", {class: "primary", disabled: !!ui.busy || null,
+                       onclick: () => act("config", async () => {
+                         const r = await post("/api/config", {test_command: ui.form.test_command, test_globs: ui.form.test_globs.split("\n")});
+                         Object.assign(state.project, r); ui.form = {test_command: r.test_command, test_globs: r.test_globs.join("\n")};
+                         return {text: "Saved to .backtrack/config.json."}; })},
+            busy("config") ? "Saving…" : "Save")),
+        note("config"))),
+
+    h("div", {class: "card section"},
+      h("div", {class: "col-head"}, "Undo a restore", h("span", {style: "margin-left:auto"}), folderSelect),
+      h("div", {class: "body", style: "padding-bottom:4px"},
+        h("p", {class: "meta"}, "Every restore snapshots the folder first. Put it back to any of those states, or to any snapshot by id (same as ",
+          h("code", {}, "backtrack undo <snapshot>"), ").")),
+      ui.points == null ? h("div", {class: "sysline"}, "Loading…")
+        : ui.points.length ? ui.points.map(pt => h("div", {class: "point"},
+            h("span", {class: "what"}, "State before the restore to ", h("code", {}, pt.restored_to.slice(0, 7)), " ", h("span", {class: "meta"}, fmtTime(pt.ts))),
+            h("code", {class: "meta"}, pt.ref.slice(0, 7)),
+            h("button", {class: "secondary", disabled: !!ui.busy || null, onclick: () => restore(pt.ref, "the state before that restore")}, "Restore this state")))
+        : h("div", {class: "sysline"}, "No restores in this folder yet."),
+      h("div", {class: "point"},
+        h("div", {class: "form-row", style: "flex:1"}, manual,
+          h("button", {class: "secondary", disabled: !!ui.busy || !(ui.manual || "").trim() || null,
+                       onclick: () => restore(ui.manual.trim(), "snapshot " + ui.manual.trim())},
+            busy("restore") ? "Restoring…" : "Restore snapshot"))),
+      h("div", {class: "body", style: "padding-top:0"}, note("restore")))));
+}
+
+async function refreshProject() {
+  state.project = await api("/api/project");
+  showHooks();
+}
+
+async function loadPoints() {
+  const ui = state.proj, folder = ui.folder;
+  let points;
+  try { points = await api("/api/restore-points?folder=" + encodeURIComponent(folder)); } catch { points = []; }
+  if (ui.folder === folder) { ui.points = points; if (state.view === "project") renderProject(); }
+}
+
+async function loadProject() {
+  state.view = "project"; state.current = null;
+  renderSessions();
+  try { await refreshProject(); } catch {}
+  const p = state.project;
+  if (!state.proj) state.proj = {busy: null, msg: {}, points: null, folder: null, manual: "", imported: null,
+                                 form: {test_command: p.test_command || "", test_globs: (p.test_globs || []).join("\n")}};
+  if (!(p.folders || []).includes(state.proj.folder)) state.proj.folder = (p.folders || [])[0];
+  renderProject();
+  if (p.folders) loadPoints();
+}
+
+function showHooks() {
+  document.getElementById("hooks-warn").hidden = !state.project.hooks || recording(state.project.hooks);
+}
+
+// ---- home: sessions and forks as a graph -----------------------------------
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+function svg(tag, attrs, ...children) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v);
+  }
+  for (const c of children.flat()) {
+    if (c == null || c === false) continue;
+    el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+  return el;
+}
+
+const branchName = (x, family) => `${x.parent_session ? "Fork" : family && family.rows.length > 1 ? "Original" : "Session"} ${short(x.session_id)}`;
+
+// Each original with every fork below it, parents before their forks, most recent family first.
+// A row's offset is the number of turns it shares with its ancestors: its turn t is column offset + t.
+function families(sessions) {
+  const byId = new Map(sessions.map(x => [x.session_id, x]));
+  const kids = new Map();
+  for (const x of sessions) if (x.parent_session && byId.has(x.parent_session)) {
+    if (!kids.has(x.parent_session)) kids.set(x.parent_session, []);
+    kids.get(x.parent_session).push(x);
+  }
+  const out = [];
+  for (const root of sessions.filter(x => !x.parent_session || !byId.has(x.parent_session))) {
+    const rows = [];
+    const walk = (x, offset, parentRow) => {
+      const row = {x, offset, parentRow};
+      rows.push(row);
+      const children = (kids.get(x.session_id) || []).sort((a, b) => a.fork_turn - b.fork_turn || a.started_at.localeCompare(b.started_at));
+      for (const k of children) walk(k, offset + k.fork_turn - 1, row);
+    };
+    walk(root, 0, null);
+    const last = rows.map(r => r.x.last_ts || r.x.started_at).sort().pop();
+    out.push({root, rows, last});
+  }
+  return out.sort((a, b) => b.last.localeCompare(a.last));
+}
+
+function endLabel(x) {
+  if (x.status === "running") return ["live", "● running"];
+  if (x.status === "failed") return ["bad", "✗ fork failed"];
+  const t = x.tests;
+  if (!t) return ["muted", "tests not run"];
+  if (t.gamed) return ["bad", "✗ green only by changing the tests"];
+  const run = t.original || t.own;
+  return [run.exit_code === 0 ? "good" : "bad", (run.exit_code === 0 ? "✓ " : "✗ ") + run.summary];
+}
+
+const G = {gap: 44, row: 44, left: 112, top: 34};
+
+function graphView(fam) {
+  const sel = state.home.sel;
+  const lastCol = (r) => r.offset + (r.x.turn_list.length ? r.x.turn_list[r.x.turn_list.length - 1].turn : 0);
+  const maxCol = Math.max(1, ...fam.rows.map(lastCol));
+  const cx = (col) => G.left + col * G.gap, cy = (i) => G.top + i * G.row;
+  const rowIndex = new Map(fam.rows.map((r, i) => [r, i]));
+  const width = cx(maxCol) + 250, height = cy(fam.rows.length - 1) + 22;
+  const parts = [];
+  for (let c = 1; c <= maxCol; c++) parts.push(svg("text", {class: "g-col", x: cx(c), y: 10}, c));
+
+  fam.rows.forEach((r, i) => {
+    const x = r.x, y = cy(i), fork = !!x.parent_session;
+    const turns = x.turn_list;
+    const first = turns.length ? r.offset + turns[0].turn : r.offset + 1;
+    parts.push(svg("a", {href: "#/s/" + x.session_id},
+      svg("text", {class: "g-label" + (fork ? " fork" : ""), x: 10, y: y - 1}, fork ? "Fork" : fam.rows.length > 1 ? "Original" : "Session"),
+      svg("text", {class: "g-id", x: 10, y: y + 12}, short(x.session_id))));
+    if (r.parentRow) {  // branch off the parent's last shared turn
+      const px = cx(r.offset), py = cy(rowIndex.get(r.parentRow)), x2 = cx(first);
+      parts.push(svg("path", {class: "g-line fork", d: `M${px} ${py} L${px} ${y - 14} Q${px} ${y} ${px + 14} ${y} L${x2} ${y}`}));
+    } else {
+      parts.push(svg("circle", {class: "g-start", cx: cx(0), cy: y, r: 4}),
+                 svg("line", {class: "g-line", x1: cx(0), y1: y, x2: cx(first), y2: y}));
+    }
+    if (turns.length > 1) parts.push(svg("line", {class: "g-line" + (fork ? " fork" : ""), x1: cx(first), y1: y, x2: cx(lastCol(r)), y2: y}));
+    turns.forEach((t, j) => {
+      const col = r.offset + t.turn, selected = sel && sel.sid === x.session_id && sel.turn === t.turn;
+      const live = x.status === "running" && j === turns.length - 1;
+      const changes = findingsOf(x).filter(f => f.turn === t.turn), weak = weakened(changes);
+      parts.push(svg("circle", {class: "g-node" + (fork ? " fork" : "") + (t.irreversible ? " pnr" : "") + (weak ? " gamed" : "") + (selected ? " sel" : "") + (live ? " live" : ""),
+                                cx: cx(col), cy: y, r: 7, "data-node": `${x.session_id}:${t.turn}`,
+                                onclick: () => { state.home.sel = selected ? null : {sid: x.session_id, turn: t.turn}; renderHome(); }},
+        svg("title", {}, `Turn ${col}: ${t.prompt || "(no prompt)"}`)));
+      if (t.irreversible) parts.push(svg("text", {class: "g-pnr", x: cx(col) - (weak ? 6 : 0), y: y - 11}, "⚠"));
+      if (weak) parts.push(svg("text", {class: "g-test", x: cx(col) + (t.irreversible ? 6 : 0), y: y - 11}, "✕"));
+    });
+    const [cls, text] = endLabel(x);
+    parts.push(svg("text", {class: "g-end " + cls, x: cx(lastCol(r)) + 16, y: y + 4}, text));
+  });
+  return svg("svg", {width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Sessions and forks"}, parts);
+}
+
+function nodePanel(fam) {
+  const sel = state.home.sel;
+  const row = sel && fam.rows.find(r => r.x.session_id === sel.sid);
+  const t = row && row.x.turn_list.find(t => t.turn === sel.turn);
+  if (!t) return null;
+  const x = row.x, shown = row.offset + t.turn;
+  // The branches from this turn: forks made at it, or for a fork's first turn, the fork and its siblings.
+  const at = x.parent_session && t.turn === 1 ? {sid: x.parent_session, turn: x.fork_turn} : {sid: x.session_id, turn: t.turn};
+  const forks = state.home.data.sessions.filter(o => o.parent_session === at.sid && o.fork_turn === at.turn).length;
+  const isEnd = t === x.turn_list[x.turn_list.length - 1];
+  const others = isEnd ? fam.rows.filter(r => r.x !== x) : [];
+  const pair = (o) => o.parent_session === x.session_id || (!o.parent_session && x.parent_session) ? compareHref(x.session_id, o.session_id)
+                                                                                                   : compareHref(o.session_id, x.session_id);
+  return h("div", {class: "node-panel"},
+    h("div", {class: "form-row"}, h("b", {style: "color:var(--title)"}, `Turn ${shown}`), h("span", {class: "meta mono"}, branchName(x, fam)),
+      h("span", {class: "meta"}, fmtTime(t.ts)),
+      t.irreversible > 0 && h("span", {class: "tag pnr"}, `⚠ ${plural(t.irreversible, "point")} of no return`)),
+    h("div", {class: "np-prompt"}, t.prompt || "(no prompt)"),
+    testChanges(findingsOf(x).filter(f => f.turn === t.turn), x.session_id, {offset: row.offset}),
+    h("div", {class: "form-row"},
+      h("a", {class: "btn", href: `#/s/${x.session_id}/e/${t.seq}`}, "Open in timeline"),
+      t.snapshot && h("a", {class: "btn rewind", href: `#/s/${x.session_id}/rewind/${t.turn}`}, "⟲ Rewind or fork from here"),
+      forks > 0 && h("a", {class: "btn primary", href: `#/rank/${at.sid}/${at.turn}`}, `Rank the ${forks + 1} branches from turn ${shown} →`)),
+    others.length > 0 && h("div", {class: "form-row"}, h("span", {class: "meta"}, "Compare this branch with"),
+      others.map(r => h("a", {class: "tag fork", href: pair(r.x)}, branchName(r.x, fam)))));
+}
+
+function renderHome() {
+  const main = document.getElementById("main");
+  const scroll = main.scrollTop;
+  const d = state.home.data;
+  if (!d) { main.replaceChildren(h("div", {class: "empty"}, state.home.error || "Loading…")); return; }
+  const ss = d.sessions;
+  if (!ss.length) {
+    main.replaceChildren(h("div", {class: "empty"}, "No sessions yet. ", h("a", {href: "#/project"}, "Install the hooks"),
+      ", then start Claude Code in this folder."));
+    return;
+  }
+  const fams = families(ss);
+  const forks = ss.filter(x => x.parent_session).length;
+  const pnr = ss.reduce((n, x) => n + x.irreversible, 0);
+  const hooks = state.project.hooks;
+  const famOf = (x) => fams.find(f => f.rows.some(r => r.x === x));
+  const attention = [
+    ...ss.filter(x => x.status === "running").map(x => ["live", `${branchName(x, famOf(x))} is running`, "#/s/" + x.session_id]),
+    ...ss.filter(x => x.status === "failed").map(x => ["fail", `${branchName(x, famOf(x))} stopped with an error`, "#/s/" + x.session_id]),
+    ...ss.filter(x => weakened(findingsOf(x))).map(x => ["fail",
+      `${branchName(x, famOf(x))} ${x.tests && x.tests.gamed ? "only went green by changing the tests" : "weakened the tests"}: ${auditCounts(findingsOf(x))}`,
+      firstFindingHref(x.session_id, findingsOf(x))]),
+    ...ss.filter(x => x.tests && x.tests.gamed && !weakened(findingsOf(x))).map(x => ["fail", `${branchName(x, famOf(x))} only went green by changing the tests`,
+      x.tests.parent ? `#/rank/${x.tests.parent}/${x.tests.turn}` : "#/s/" + x.session_id]),
+  ];
+  main.replaceChildren(h("div", {},
+    h("h2", {}, "Sessions"),
+    h("div", {class: "strip"},
+      hooks && h("a", {class: "pill " + (recording(hooks) ? "pass" : "fail"), href: "#/project", style: "text-decoration:none"},
+        recording(hooks) ? "✓ recording" : hooks === "paused" ? "paused" : "not recording"),
+      h("span", {class: "tag"}, plural(fams.length, "session")), h("span", {class: "tag fork"}, plural(forks, "fork")),
+      pnr > 0 && h("a", {class: "tag pnr", href: "#/irreversible"}, `⚠ ${plural(pnr, "point")} of no return`),
+      ss.some(x => weakened(findingsOf(x))) && h("a", {class: "tag weak", href: "#/audit"},
+        `✕ ${plural(ss.filter(x => weakened(findingsOf(x))).length, "session")} weakened the tests`),
+      h("span", {class: "meta"}, "Each dot is a turn. Click one to open it, rewind to it or fork from it.")),
+    attention.length > 0 && h("div", {class: "card attention"}, h("div", {class: "col-head"}, "Needs attention"),
+      attention.map(([cls, text, href]) => h("a", {href}, h("span", {class: "pill " + cls}, cls === "live" ? "running" : "!"), text))),
+    fams.map(fam => h("div", {class: "card family"},
+      h("div", {class: "col-head"}, h("a", {href: "#/s/" + fam.root.session_id}, oneLine(fam.root.first_prompt, 120) || "(no prompt)"),
+        h("span", {class: "meta mono"}, `${fmtTime(fam.last)} · ${plural(fam.rows.length - 1, "fork")}`)),
+      h("div", {class: "graph-wrap"}, graphView(fam)),
+      nodePanel(fam)))));
+  main.scrollTop = scroll;
+}
+
+async function loadHome() {
+  state.view = "home"; state.current = null;
+  state.home = state.home || {data: null, sel: null, error: null};
+  renderSessions(); renderHome();
+  await refreshHome();
+}
+
+async function refreshHome() {
+  try {
+    const data = await api("/api/home");
+    const changed = JSON.stringify(data) !== JSON.stringify(state.home.data);
+    state.home.data = data; state.home.error = null;
+    if (changed && state.view === "home") renderHome();
+  } catch { state.home.error = "Could not load the sessions."; if (state.view === "home") renderHome(); }
+}
+
+// ---- rank: the branches from one turn ---------------------------------------
+
+async function loadRank(sid, turn) {
+  state.view = "rank"; state.current = null;
+  const r = state.rank;
+  if (!r || r.sid !== sid || r.turn !== turn) state.rank = {sid, turn, data: null, running: false, error: null, command: null};
+  renderSessions(); renderRank();
+  await refreshRank();
+}
+
+async function refreshRank() {
+  const r = state.rank;
+  const q = `session_id=${encodeURIComponent(r.sid)}&turn=${r.turn}` + (r.command ? `&test_command=${encodeURIComponent(r.command)}` : "");
+  try { r.data = await api("/api/rank?" + q); r.error = null; }
+  catch { r.error = "Could not rank the branches from this turn."; }
+  if (state.view === "rank" && state.rank === r) renderRank();
+}
+
+async function runRankTests(rerun) {
+  const r = state.rank;
+  r.running = true; renderRank();
+  try { r.data = await post("/api/rank/tests", {session_id: r.sid, turn: r.turn, rerun, test_command: r.command}); }
+  catch (e) { r.error = "Running the tests failed: " + e.message; }
+  r.running = false;
+  if (state.view === "rank") renderRank();
+}
+
+function renderRank() {
+  const main = document.getElementById("main");
+  const scroll = main.scrollTop;
+  const r = state.rank, d = r.data;
+  if (!d) { main.replaceChildren(h("div", {class: "empty"}, r.error || "Loading…")); return; }
+  const shown = turnOf(d.session_id, d.turn);
+  const orig = d.branches.find(b => b.original);
+  const finished = d.branches.filter(b => b.status !== "running");
+  const missing = finished.some(b => !b.own);
+  const running = d.branches.filter(b => b.status === "running").length;
+  const best = d.branches[0];
+  const bestOk = best && passed(best.tests_original) && best.status === "done";
+  const name = (b) => b.original ? "Original" : "Fork";
+
+  const cell = (b, which) => {
+    const run = b[which], key = `rk:${b.session.session_id}:${which}`;
+    if (b.status === "running") return h("td", {}, h("span", {class: "pill live"}, "● running"));
+    if (b.status === "failed" && !run) return h("td", {}, h("span", {class: "pill fail"}, "fork failed"));
+    return h("td", {}, testPill(run, run ? () => toggle(key) : null),
+      which === "own" && b.tests_changed && h("span", {class: "note meta"}, "⚠ changed the tests"),
+      which === "tests_original" && b.gamed && h("span", {class: "note meta"}, "green only with its own tests"),
+      run && state.open.has(key) && h("pre", {class: "block", style: "margin-top:8px;max-width:420px;overflow:auto"}, run.output || "(no output)"));
+  };
+  const cmd = h("input", {class: "input mono", style: "flex:1;min-width:180px", title: "Test command (the default is set on the Project page)",
+                          onchange: (ev) => { r.command = ev.target.value.trim() || null; refreshRank(); }});
+  cmd.value = d.command;
+
+  main.replaceChildren(h("div", {},
+    h("h2", {}, `Rank: ${plural(d.branches.length, "branch", "branches")} from turn ${shown}`),
+    h("div", {class: "summary meta"},
+      h("a", {href: `#/s/${d.session_id}/rewind/${d.turn}`}, `fork turn ${shown} another way`),
+      h("span", {class: "mono"}, `fork point ${d.base_ref.slice(0, 7)}`),
+      running > 0 && h("span", {class: "pill live"}, `${running} still running`)),
+    orig && h("div", {class: "card", style: "padding:10px 14px;margin-bottom:14px"},
+      h("span", {class: "meta"}, `Original turn ${shown}: `), h("span", {style: "color:var(--title)"}, oneLine(orig.instruction, 300))),
+    bestOk ? h("div", {class: "callout good", style: "margin:0 0 14px"},
+        h("b", {}, `Best${running ? " so far" : ""}: ${name(best)} ${short(best.session.session_id)}${best.model ? ` (${best.model})` : ""}. `),
+        `It passes the original tests (${best.tests_original.summary}) with ${plural(best.files.length, "file")} changed (+${best.added} −${best.deleted}) and ${fmtNum(best.output_tokens)} output tokens.`)
+      : missing && !r.running && h("div", {class: "callout", style: "margin:0 0 14px;border-color:var(--line-strong);background:var(--panel)"},
+        "Run the tests to rank the branches by their results."),
+    d.branches.filter(b => b.gamed).map(b => h("div", {class: "callout", style: "margin:0 0 14px"},
+      h("b", {}, `${name(b)} ${short(b.session.session_id)} only looks green because it changed the tests. `),
+      `It passes its own tests (${b.own.summary}) but fails the original ones (${b.tests_original.summary}).`)),
+    h("div", {class: "card", style: "overflow:hidden"},
+      h("div", {class: "tests-bar"},
+        h("span", {class: "meta"}, "Command "), cmd,
+        r.running && h("span", {class: "meta"}, "Running tests…"),
+        h("button", {class: "primary", disabled: r.running || !finished.length || null, onclick: () => runRankTests(!missing)},
+          missing ? "Run tests" : "Re-run")),
+      h("div", {style: "overflow-x:auto"}, h("table", {class: "matrix"},
+        h("thead", {}, h("tr", {}, ["#", "Branch", `Instruction at turn ${shown}`, "Original tests", "Own tests", "Changes", "Output tokens", "Time", ""].map(t => h("th", {}, t)))),
+        h("tbody", {}, d.branches.map((b, i) => h("tr", {class: (b.original ? "" : "fork") + (i === 0 && bestOk ? " best" : "")},
+          h("td", {class: "side"}, i === 0 && bestOk ? h("span", {class: "pill pass"}, "#1") : `#${i + 1}`),
+          h("td", {class: "side"}, h("a", {href: "#/s/" + b.session.session_id, style: "color:inherit"}, name(b)),
+            h("span", {class: "note meta mono"}, short(b.session.session_id) + (b.model ? ` · ${b.model}` : ""))),
+          h("td", {class: "instr"}, oneLine(b.instruction, 240) || (b.status === "running" ? h("span", {class: "meta"}, "starting…") : "(no prompt)")),
+          cell(b, "tests_original"), cell(b, "own"),
+          h("td", {class: "num mono"}, plural(b.files.length, "file"), " ", h("span", {class: "plus"}, `+${b.added}`), " ", h("span", {class: "minus"}, `−${b.deleted}`)),
+          h("td", {class: "num mono"}, fmtNum(b.output_tokens)),
+          h("td", {class: "num mono"}, b.duration_ms != null ? fmtMs(b.duration_ms) : ""),
+          h("td", {class: "num"}, !b.original && orig && h("a", {class: "tag fork", href: compareHref(orig.session.session_id, b.session.session_id)}, "compare →")))))))),
+    r.error && h("div", {class: "callout"}, r.error)));
+  main.scrollTop = scroll;
+}
+
+// ---- search and points of no return ----------------------------------------
+
+// Snippets mark matches with \x01 … \x02; build <mark>s without innerHTML.
+function highlighted(snippet) {
+  const out = [];
+  for (const [i, part] of snippet.replace(/\s+/g, " ").split(/[\x01\x02]/).entries())
+    if (part) out.push(i % 2 ? h("mark", {}, part) : part);
+  return out;
+}
+
+const sessionById = (id) => state.sessions.find(s => s.session_id === id);
+const turnOf = (id, turn) => { const s = sessionById(id); return s && s.fork_turn ? turn + s.fork_turn - 1 : turn; };
+
+// Group items by session, keeping the order in which sessions first appear.
+function bySession(items) {
+  const groups = new Map();
+  for (const it of items) {
+    if (!groups.has(it.session_id)) groups.set(it.session_id, []);
+    groups.get(it.session_id).push(it);
+  }
+  return [...groups.entries()];
+}
+
+function sessionGroup(id, rows) {
+  const s = sessionById(id) || {session_id: id};
+  return h("div", {class: "card hits" + (s.parent_session ? " fork" : "")},
+    h("div", {class: "col-head"}, h("a", {href: "#/s/" + id},
+      s.parent_session && h("span", {class: "tag fork", style: "margin-right:8px"}, `⑂ fork of ${short(s.parent_session)} @ turn ${s.fork_turn}`),
+      oneLine(stripForkNote(s.first_prompt), 110) || "(no prompt)", " ",
+      h("span", {class: "meta mono"}, short(id)))),
+    rows);
+}
+
+function renderSearch() {
+  const main = document.getElementById("main");
+  const {q, hits} = state.search;
+  if (!q.trim()) { main.replaceChildren(h("div", {class: "empty"}, "Type to search every recorded session.")); return; }
+  if (!hits) { main.replaceChildren(h("div", {class: "empty"}, "Searching…")); return; }
+  main.replaceChildren(h("div", {},
+    h("h2", {}, "Search"),
+    h("div", {class: "summary meta"}, hits.length ? `${plural(hits.length, "match", "matches")}${hits.length === 50 ? " (best 50)" : ""} for “${q}”` : `No matches for “${q}”.`),
+    bySession(hits).map(([id, rows]) => sessionGroup(id, rows.map(hit =>
+      h("a", {class: "hit", href: `#/s/${id}/e/${hit.seq}`},
+        h("span", {class: "where"}, h("span", {class: "meta"}, `Turn ${turnOf(id, hit.turn)}`),
+          h("span", {class: "tag"}, hit.tool_name || {prompt: "prompt", stop: "reply"}[hit.kind] || hit.kind),
+          hit.irreversible && h("span", {class: "tag pnr"}, "⚠")),
+        h("span", {class: "text mono"}, highlighted(hit.snippet))))))));
+}
+
+function renderIrreversible(events) {
+  const main = document.getElementById("main");
+  main.replaceChildren(h("div", {},
+    h("h2", {}, "Points of no return"),
+    h("div", {class: "summary meta"}, events.length
+      ? "Actions with outside effects: pushes, publishes, deploys, network writes. Rewinding or forking restores files and conversation, but these already happened."
+      : "No irreversible actions recorded."),
+    bySession(events).map(([id, rows]) => sessionGroup(id, rows.map(e =>
+      h("a", {class: "hit", href: `#/s/${id}/e/${e.seq}`},
+        h("span", {class: "where"}, h("span", {class: "meta"}, `Turn ${turnOf(id, e.turn)}`), h("span", {class: "tag pnr"}, "⚠ " + e.tool_name)),
+        h("span", {class: "text mono"}, describeInput(e.input), " ", h("span", {class: "meta"}, fmtTime(e.ts)))))))));
+}
+
+let searchSeq = 0;
+async function loadSearch(q) {
+  state.view = "search"; state.current = null;
+  state.search = {q, hits: null};
+  const input = document.getElementById("q");
+  if (document.activeElement !== input) input.value = q;
+  renderSessions(); renderSearch();
+  if (!q.trim()) return;
+  const mine = ++searchSeq;
+  try {
+    const hits = await api("/api/search?q=" + encodeURIComponent(q));
+    if (mine === searchSeq) { state.search.hits = hits; renderSearch(); }
+  } catch { if (mine === searchSeq) { state.search.hits = []; renderSearch(); } }
+}
+
+// Open, scroll to and flash the element showing event `seq`.
+function focusEvent(seq) {
+  const e = state.data && state.data.events.find(e => e.seq === seq);
+  if (!e) return;
+  if (e.kind === "tool_pre" || e.kind === "tool_post") { state.open.add("d:" + (e.tool_use_id || "seq" + e.seq)); renderSession(); }
+  const el = document.querySelector(`[data-seq~="${seq}"]`);
+  if (el) { el.scrollIntoView({block: "center"}); el.classList.add("flash"); }
+}
+
+// ---- data loading ----------------------------------------------------------
+
+async function loadSessions() {
+  state.sessions = await api("/api/sessions");
+  renderSessions();
+}
+
+async function loadSession(id, keepOpen) {
+  if (!keepOpen) state.open.clear();
+  state.view = "session"; state.current = id;
+  try { state.data = await api("/api/sessions/" + encodeURIComponent(id)); }
+  catch { state.data = null; }
+  renderSessions();
+  renderSession();
+}
+
+async function loadIrreversible() {
+  state.view = "irreversible"; state.current = null;
+  renderSessions();
+  try { renderIrreversible(await api("/api/irreversible")); }
+  catch { document.getElementById("main").replaceChildren(h("div", {class: "empty"}, "Could not load.")); }
+}
+
+function route() {
+  document.getElementById("pnr-link").classList.toggle("active", location.hash === "#/irreversible");
+  const section = /^#\/compare/.test(location.hash) ? "compare" : location.hash === "#/project" ? "project"
+                : location.hash === "#/audit" ? "audit"
+                : ["", "#", "#/"].includes(location.hash) ? "home" : "";
+  for (const a of document.querySelectorAll("header nav a")) a.classList.toggle("active", a.dataset.nav === section);
+  let m;
+  if ((m = location.hash.match(/^#\/compare\/([^/]+)\/([^/]+)$/))) loadCompare(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
+  else if ((m = location.hash.match(/^#\/s\/([^/]+)\/e\/(\d+)$/))) loadSession(decodeURIComponent(m[1])).then(() => focusEvent(+m[2]));
+  else if ((m = location.hash.match(/^#\/s\/([^/]+)$/))) loadSession(decodeURIComponent(m[1]));
+  else if ((m = location.hash.match(/^#\/s\/([^/]+)\/rewind\/(\d+)$/))) loadSession(decodeURIComponent(m[1])).then(() => openRewind(+m[2]));
+  else if ((m = location.hash.match(/^#\/rank\/([^/]+)\/(\d+)$/))) loadRank(decodeURIComponent(m[1]), +m[2]);
+  else if ((m = location.hash.match(/^#\/search\/(.*)$/))) loadSearch(decodeURIComponent(m[1]));
+  else if (location.hash === "#/irreversible") loadIrreversible();
+  else if (location.hash === "#/compare") { state.view = "picker"; state.current = null; renderSessions(); renderPicker(); }
+  else if (location.hash === "#/project") loadProject();
+  else if (location.hash === "#/audit") loadAudit();
+  else loadHome();
+}
+
+// Open the rewind panel of a turn of the open session and scroll to it.
+function openRewind(turn) {
+  state.open.add("rw:" + turn);
+  renderSession();
+  const el = document.getElementById("turn-" + turn);
+  if (el) el.scrollIntoView({block: "start"});
+}
+
+// Live view: refresh when new events arrive in the open session.
+async function poll() {
+  try {
+    const before = state.sessions.find(s => s.session_id === state.current);
+    await loadSessions();
+    const after = state.sessions.find(s => s.session_id === state.current);
+    const typing = document.activeElement && document.activeElement.closest(".rw-panel");
+    if (state.view === "session" && !typing && before && after && after.events !== before.events) await loadSession(state.current, true);
+    if (state.view === "picker" && !document.activeElement.closest("#main")) renderPicker();
+    if (state.view === "home") await refreshHome();
+    if (state.view === "rank" && state.rank.data && !state.rank.running && !document.activeElement.closest("#main input")
+        && state.rank.data.branches.some(b => b.status === "running")) await refreshRank();
+  } catch {}
+}
+
+api("/api/project").then(p => { state.project = p; document.getElementById("root").textContent = p.root; showHooks(); });
+window.addEventListener("hashchange", route);
+let searchTimer;
+document.getElementById("q").addEventListener("input", (ev) => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    const q = ev.target.value;
+    // One history entry per search, not per keystroke.
+    history[state.view === "search" ? "replaceState" : "pushState"](null, "", "#/search/" + encodeURIComponent(q));
+    loadSearch(q);
+  }, 200);
+});
+loadSessions().then(route);
+setInterval(poll, 3000);
+</script>
+</body>
+</html>

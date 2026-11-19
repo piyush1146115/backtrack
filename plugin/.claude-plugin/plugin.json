@@ -1,0 +1,7 @@
+{
+  "name": "backtrack",
+  "version": "0.1.0",
+  "description": "Record every Claude Code session in your git repos, then rewind, fork, compare and rank any turn in a local web timeline. Needs the backtrack CLI: uv tool install git+https://github.com/piyush1146115/backtrack",
+  "author": {"name": "piyush1146115"},
+  "homepage": "https://github.com/piyush1146115/backtrack"
+}

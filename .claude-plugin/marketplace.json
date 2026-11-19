@@ -1,0 +1,13 @@
+{
+  "name": "backtrack",
+  "owner": {"name": "piyush1146115"},
+  "metadata": {"description": "Backtrack: a flight recorder for AI coding agents"},
+  "plugins": [
+    {
+      "name": "backtrack",
+      "source": "./plugin",
+      "description": "Record every Claude Code session in your git repos, then rewind, fork, compare and rank any turn in a local web timeline.",
+      "category": "development"
+    }
+  ]
+}
